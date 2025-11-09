@@ -31,7 +31,11 @@ func main() {
 	refresh := time.NewTicker(500 * time.Millisecond)
 	defer refresh.Stop()
 
-	// main loop: update latest stats and periodically redraw
+	// initialize screen once (clear, hide cursor, draw labels)
+	initScreen()
+	defer restoreTerminal()
+
+	// main loop: update latest stats and periodically redraw only fields
 	for {
 		select {
 		case s, ok := <-cpuCh:
@@ -51,7 +55,7 @@ func main() {
 				netS = s
 			}
 		case <-refresh.C:
-			printScreen(cpuS, ramS, diskS, netS)
+			updateScreen(cpuS, ramS, diskS, netS)
 		case <-sigs:
 			cancel()
 			// let monitors clean up
@@ -64,18 +68,59 @@ func main() {
 	}
 }
 
-func printScreen(cpuS hundler.CpuStat, ramS hundler.RamStat, diskS hundler.DiskStat, netS hundler.NetStat) {
-	// clear screen + move cursor home
-	fmt.Print("\033[2J\033[H")
-	fmt.Printf("Basic System Monitor — %s\n\n", time.Now().Format(time.RFC1123))
+// Terminal helpers: draw static layout once, then update fields in-place.
+func initScreen() {
+	// clear screen and hide cursor
+	fmt.Print("\033[2J")
+	fmt.Print("\033[?25l")
+	// draw static labels
+	move(1, 1)
+	fmt.Printf("Basic System Monitor — %s", time.Now().Format(time.RFC1123))
 
-	fmt.Printf("CPU: %.2f%%\n", cpuS.Percent)
-	fmt.Println()
-	fmt.Printf("RAM: Used %s / %s (%.2f%%)\n", byteCountSI(ramS.Used), byteCountSI(ramS.Total), ramS.UsedPercent)
-	fmt.Println()
-	fmt.Printf("Disk (%s): Used %s (%.2f%%)\n", diskS.Path, byteCountSI(diskS.Used), diskS.UsedPercent)
-	fmt.Println()
-	fmt.Printf("Network: ↑ %s/s  ↓ %s/s\n", byteCountSI(uint64(netS.BytesSentPerSec)), byteCountSI(uint64(netS.BytesRecvPerSec)))
+	move(3, 1)
+	fmt.Print("CPU:           ")
+
+	move(5, 1)
+	fmt.Print("RAM:           Used / Total (%%)")
+
+	move(7, 1)
+	fmt.Print("Disk (/):      Used (%%)")
+
+	move(9, 1)
+	fmt.Print("Network:       ↑ /s   ↓ /s")
+}
+
+func restoreTerminal() {
+	// show cursor and move to next line
+	fmt.Print("\033[?25h")
+	fmt.Print("\n")
+}
+
+func updateScreen(cpuS hundler.CpuStat, ramS hundler.RamStat, diskS hundler.DiskStat, netS hundler.NetStat) {
+	// update timestamp
+	move(1, 1)
+	fmt.Printf("Basic System Monitor — %s", time.Now().Format(time.RFC1123))
+
+	// print CPU at col 16 (after label), fixed width
+	move(3, 16)
+	fmt.Printf("%6.2f%%     ", cpuS.Percent)
+
+	// RAM: Used / Total (percent)
+	move(5, 16)
+	fmt.Printf("%8s / %8s (%6.2f%%)", byteCountSI(ramS.Used), byteCountSI(ramS.Total), ramS.UsedPercent)
+
+	// Disk
+	move(7, 16)
+	fmt.Printf("%8s (%6.2f%%)   ", byteCountSI(diskS.Used), diskS.UsedPercent)
+
+	// Network
+	move(9, 16)
+	fmt.Printf("%8s   %8s   ", byteCountSI(uint64(netS.BytesSentPerSec)), byteCountSI(uint64(netS.BytesRecvPerSec)))
+}
+
+// move cursor to (row, col)
+func move(row, col int) {
+	fmt.Printf("\033[%d;%dH", row, col)
 }
 
 // byteCountSI formats bytes in SI units (kB=1000)
