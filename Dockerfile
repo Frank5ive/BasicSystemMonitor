@@ -4,7 +4,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(dpkg --print-architecture | sed -e 's/amd64/amd64/;s/arm64/arm64/') \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags='-s -w' -o /out/monitor ./
 
 # Final image

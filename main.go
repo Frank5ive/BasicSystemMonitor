@@ -2,137 +2,65 @@ package main
 
 import (
 	"basicsystemmonitor/hundler"
+	"basicsystemmonitor/tui"
 	"context"
+	"flag"
 	"fmt"
+	"log"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
+	var configPath string
+	var refreshIntervalStr string
+	var diskPathStr string
+	var ifaceName string
+	var showProcesses bool // New: for process list visibility
+
+	flag.StringVar(&configPath, "c", "config.yaml", "Path to configuration file")
+	flag.StringVar(&refreshIntervalStr, "i", "", "Refresh interval (e.g., 1s, 500ms)")
+	flag.StringVar(&diskPathStr, "d", "", "Disk path to monitor (e.g., /var, C:\\)")
+	flag.StringVar(&ifaceName, "iface", "", "Network interface to monitor (e.g., eth0, en0)")
+	flag.BoolVar(&showProcesses, "p", false, "Show process list") // New flag
+	flag.Parse()
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Error loading configuration: %v", err)
+	}
+
+	// Override config values with command-line flags if provided
+	if refreshIntervalStr != "" {
+		config.RefreshInterval = refreshIntervalStr
+	}
+	if diskPathStr != "" {
+		config.DiskPath = diskPathStr
+	}
+
+	refreshInterval, err := config.GetRefreshInterval()
+	if err != nil {
+		log.Fatalf("Error parsing refresh interval: %v", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	// Start monitors and get their channels
+	cpuCh := hundler.StartCpuMonitor(ctx, refreshInterval)
+	ramCh := hundler.StartRamMonitor(ctx, refreshInterval)
+	diskCh := hundler.StartDiskMonitor(ctx, 2*refreshInterval, config.DiskPath)
+	netCh := hundler.StartNetworkMonitor(ctx, refreshInterval, ifaceName) // Pass ifaceName
+	procCh := hundler.StartProcessMonitor(ctx, refreshInterval) // Start process monitor
 
-	// start monitors
-	cpuCh := hundler.StartCpuMonitor(ctx, 1*time.Second)
-	ramCh := hundler.StartRamMonitor(ctx, 1*time.Second)
-	diskCh := hundler.StartDiskMonitor(ctx, 2*time.Second, "/")
-	netCh := hundler.StartNetworkMonitor(ctx, 1*time.Second)
+	// Initialize the Bubble Tea model with the channels
+	initialModel := tui.New(cpuCh, ramCh, diskCh, netCh, procCh, ifaceName, showProcesses)
 
-	var cpuS hundler.CpuStat
-	var ramS hundler.RamStat
-	var diskS hundler.DiskStat
-	var netS hundler.NetStat
-
-	refresh := time.NewTicker(500 * time.Millisecond)
-	defer refresh.Stop()
-
-	// initialize screen once (clear, hide cursor, draw labels)
-	initScreen()
-	defer restoreTerminal()
-
-	// main loop: update latest stats and periodically redraw only fields
-	for {
-		select {
-		case s, ok := <-cpuCh:
-			if ok {
-				cpuS = s
-			}
-		case s, ok := <-ramCh:
-			if ok {
-				ramS = s
-			}
-		case s, ok := <-diskCh:
-			if ok {
-				diskS = s
-			}
-		case s, ok := <-netCh:
-			if ok {
-				netS = s
-			}
-		case <-refresh.C:
-			updateScreen(cpuS, ramS, diskS, netS)
-		case <-sigs:
-			cancel()
-			// let monitors clean up
-			time.Sleep(200 * time.Millisecond)
-			fmt.Println("\nExiting...")
-			return
-		case <-ctx.Done():
-			return
-		}
+	// Start the Bubble Tea program
+	p := tea.NewProgram(initialModel)
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Alas, there's been an error: %v", err)
+		os.Exit(1)
 	}
-}
-
-// Terminal helpers: draw static layout once, then update fields in-place.
-func initScreen() {
-	// clear screen and hide cursor
-	fmt.Print("\033[2J")
-	fmt.Print("\033[?25l")
-	// draw static labels
-	move(1, 1)
-	fmt.Printf("Basic System Monitor — %s", time.Now().Format(time.RFC1123))
-
-	move(3, 1)
-	fmt.Print("CPU:           ")
-
-	move(5, 1)
-	fmt.Print("RAM:           Used / Total (%%)")
-
-	move(7, 1)
-	fmt.Print("Disk (/):      Used (%%)")
-
-	move(9, 1)
-	fmt.Print("Network:       ↑ /s   ↓ /s")
-}
-
-func restoreTerminal() {
-	// show cursor and move to next line
-	fmt.Print("\033[?25h")
-	fmt.Print("\n")
-}
-
-func updateScreen(cpuS hundler.CpuStat, ramS hundler.RamStat, diskS hundler.DiskStat, netS hundler.NetStat) {
-	// update timestamp
-	move(1, 1)
-	fmt.Printf("Basic System Monitor — %s", time.Now().Format(time.RFC1123))
-
-	// print CPU at col 16 (after label), fixed width
-	move(3, 16)
-	fmt.Printf("%6.2f%%     ", cpuS.Percent)
-
-	// RAM: Used / Total (percent)
-	move(5, 16)
-	fmt.Printf("%8s / %8s (%6.2f%%)", byteCountSI(ramS.Used), byteCountSI(ramS.Total), ramS.UsedPercent)
-
-	// Disk
-	move(7, 16)
-	fmt.Printf("%8s (%6.2f%%)   ", byteCountSI(diskS.Used), diskS.UsedPercent)
-
-	// Network
-	move(9, 16)
-	fmt.Printf("%8s   %8s   ", byteCountSI(uint64(netS.BytesSentPerSec)), byteCountSI(uint64(netS.BytesRecvPerSec)))
-}
-
-// move cursor to (row, col)
-func move(row, col int) {
-	fmt.Printf("\033[%d;%dH", row, col)
-}
-
-// byteCountSI formats bytes in SI units (kB=1000)
-func byteCountSI(b uint64) string {
-	const unit = 1000
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := uint64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "kMGTPE"[exp])
 }

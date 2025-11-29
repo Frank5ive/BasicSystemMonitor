@@ -1,0 +1,50 @@
+# Binaries for programs and plugins
+*.exe
+*.test
+*.prof
+
+# Project-local vendored dependencies (go modules)
+# Please do NOT commit vendor/ into a module repository.
+# go.mod and go.sum are the official ways to manage dependencies.
+# vendor/
+
+# Go workspace file
+go.work.sum
+
+# Dependencies
+# go.sum is used for modules, so it should usually be committed.
+# vendor/
+
+# Test binary, generated with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with `-o` flag
+*.out
+
+# Editor/IDE files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.log
+*.tmp
+temp/
+build/
+dist/
+
+# Docker
+# .dockerignore should be used for this
+# However, for local development, you might want to ignore some docker-related files
+# docker-compose.yml
+# Dockerfile
+# .env
+
+# Snaps
+# snap/
+# .snap
+# snapcraft.yaml
+
+# Manual additions from the project
+basic-system-monitor
