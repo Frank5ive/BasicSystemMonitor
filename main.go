@@ -18,12 +18,14 @@ func main() {
 	var diskPathStr string
 	var ifaceName string
 	var showProcesses bool // New: for process list visibility
+	var processRefreshIntervalStr string // New: for process refresh interval
 
 	flag.StringVar(&configPath, "c", "config.yaml", "Path to configuration file")
 	flag.StringVar(&refreshIntervalStr, "i", "", "Refresh interval (e.g., 1s, 500ms)")
 	flag.StringVar(&diskPathStr, "d", "", "Disk path to monitor (e.g., /var, C:\\)")
 	flag.StringVar(&ifaceName, "iface", "", "Network interface to monitor (e.g., eth0, en0)")
 	flag.BoolVar(&showProcesses, "p", false, "Show process list") // New flag
+	flag.StringVar(&processRefreshIntervalStr, "proc-interval", "", "Process list refresh interval (e.g., 3s, 5s)") // New flag
 	flag.Parse()
 
 	config, err := LoadConfig(configPath)
@@ -38,10 +40,18 @@ func main() {
 	if diskPathStr != "" {
 		config.DiskPath = diskPathStr
 	}
+	if processRefreshIntervalStr != "" {
+		config.ProcessRefreshInterval = processRefreshIntervalStr
+	}
 
 	refreshInterval, err := config.GetRefreshInterval()
 	if err != nil {
 		log.Fatalf("Error parsing refresh interval: %v", err)
+	}
+
+	processRefreshInterval, err := config.GetProcessRefreshInterval()
+	if err != nil {
+		log.Fatalf("Error parsing process refresh interval: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -52,7 +62,7 @@ func main() {
 	ramCh := hundler.StartRamMonitor(ctx, refreshInterval)
 	diskCh := hundler.StartDiskMonitor(ctx, 2*refreshInterval, config.DiskPath)
 	netCh := hundler.StartNetworkMonitor(ctx, refreshInterval, ifaceName) // Pass ifaceName
-	procCh := hundler.StartProcessMonitor(ctx, refreshInterval) // Start process monitor
+	procCh := hundler.StartProcessMonitor(ctx, processRefreshInterval) // Use new interval
 
 	// Initialize the Bubble Tea model with the channels
 	initialModel := tui.New(cpuCh, ramCh, diskCh, netCh, procCh, ifaceName, showProcesses)

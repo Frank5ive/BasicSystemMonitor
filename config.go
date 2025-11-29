@@ -10,15 +10,17 @@ import (
 
 // Config holds the application's configuration settings.
 type Config struct {
-	RefreshInterval string `yaml:"refreshInterval"`
-	DiskPath        string `yaml:"diskPath"`
+	RefreshInterval        string `yaml:"refreshInterval"`
+	DiskPath               string `yaml:"diskPath"`
+	ProcessRefreshInterval string `yaml:"processRefreshInterval"`
 }
 
 // DefaultConfig returns a Config struct with default values.
 func DefaultConfig() Config {
 	return Config{
-		RefreshInterval: "1s",
-		DiskPath:        "/",
+		RefreshInterval:        "1s",
+		DiskPath:               "/",
+		ProcessRefreshInterval: "3s",
 	}
 }
 
@@ -47,4 +49,9 @@ func LoadConfig(configPath string) (Config, error) {
 // GetRefreshInterval parses the RefreshInterval string into a time.Duration.
 func (c *Config) GetRefreshInterval() (time.Duration, error) {
 	return time.ParseDuration(c.RefreshInterval)
+}
+
+// GetProcessRefreshInterval parses the ProcessRefreshInterval string into a time.Duration.
+func (c *Config) GetProcessRefreshInterval() (time.Duration, error) {
+	return time.ParseDuration(c.ProcessRefreshInterval)
 }
